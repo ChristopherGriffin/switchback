@@ -51,3 +51,16 @@ jobs:
         run: gh release upload "${{ steps.tag.outputs.tag }}" dist/switchbota.exe -R "$GITHUB_REPOSITORY" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
+
+      # The exe above replaces any exe uploaded by hand, so rewrite the checksums to match.
+      - name: Refresh the checksums
+        shell: bash
+        run: |
+          mkdir -p sums
+          cp dist/switchbota.exe server/bin/app.bin sums/
+          cp dist/payload.bin sums/payload-ship.bin
+          cp dist/payload-direct.bin sums/payload-direct.bin
+          (cd sums && sha256sum switchbota.exe app.bin payload-ship.bin payload-direct.bin > SHA256SUMS.txt)
+          gh release upload "${{ steps.tag.outputs.tag }}" sums/SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
