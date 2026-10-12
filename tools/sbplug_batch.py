@@ -393,6 +393,21 @@ def print_label(printer, name, wifi_mac):
         connection.sendall(zpl.encode("ascii"))
 
 
+def append_flash_log(path, plug):
+    """Append one numbered line per flashed plug: sequence, BLE MAC, Wi-Fi MAC, name."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    except FileNotFoundError:
+        lines = []
+    number = sum(1 for line in lines if line and not line.startswith("#")) + 1
+    with open(path, "a", encoding="utf-8") as handle:
+        if not lines:
+            handle.write("#\tBLE-MAC\tWiFi-MAC\tname\n")
+        handle.write(f"{number}\t{plug.ble_mac}\t{plug.wifi_mac}\t{plug.name}\n")
+    return number
+
+
 async def convert(plug, feed, args):
     await asyncio.to_thread(feed.poll)  # skip anything already in the feed
     tracker = PlugEvents(feed, plug, args.portal)
@@ -417,6 +432,8 @@ async def convert(plug, feed, args):
     with open(args.log, "a", newline="") as handle:
         csv.writer(handle).writerow(
             [datetime.datetime.now().isoformat(timespec="seconds"), plug.name, plug.wifi_mac, plug.ble_mac, address])
+    number = append_flash_log(args.txt, plug)
+    log(f"logged as #{number} in {args.txt} (BLE {plug.ble_mac}, Wi-Fi {plug.wifi_mac})")
     if args.printer:
         try:
             print_label(args.printer, plug.name, plug.wifi_mac)
@@ -483,6 +500,7 @@ def main():
     parser.add_argument("--printer", help="ZPL printer as host:port (port defaults to 9100). No label without it.")
     parser.add_argument("--print-test", action="store_true", help="print a sample label and exit")
     parser.add_argument("--log", default="sbplug_converted.csv", help="CSV file that converted plugs are appended to")
+    parser.add_argument("--txt", default="sbplug_flashed.txt", help="numbered text log of flashed plugs, both MACs, in flash order")
     args = parser.parse_args()
     try:
         asyncio.run(run(args))

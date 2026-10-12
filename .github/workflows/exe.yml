@@ -1,0 +1,52 @@
+name: Build switchbota.exe
+
+# Builds the Windows exe and attaches it to the release when you push a tag
+# like esphome-v0.1.0. The ship firmware and the flasher are taken from that
+# release, so this job does not need ESPHome.
+on:
+  push:
+    tags:
+      - 'esphome-v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to take app.bin / payload-ship.bin from and upload the exe to'
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build deps
+        run: pip install pyinstaller bleak zeroconf
+
+      - name: Decide the release tag
+        id: tag
+        shell: bash
+        run: echo "tag=${GITHUB_REF_NAME:-${{ github.event.inputs.release_tag }}}" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the firmware from the release
+        shell: bash
+        run: |
+          mkdir -p server/bin dist
+          gh release download "${{ steps.tag.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p app.bin -D server/bin
+          gh release download "${{ steps.tag.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p payload-ship.bin -O dist/payload.bin
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Build the exe
+        run: pyinstaller packaging/switchbota.spec
+
+      - name: Attach the exe to the release
+        shell: bash
+        run: gh release upload "${{ steps.tag.outputs.tag }}" dist/switchbota.exe -R "$GITHUB_REPOSITORY" --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

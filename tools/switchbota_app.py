@@ -181,7 +181,11 @@ async def run(args):
     print(f"  payload: {len(fw.payload)} bytes, md5 {fw.md5}")
 
     feed = LiveFeed()
-    start_http(fw, feed, args.http_port)
+    try:
+        start_http(fw, feed, args.http_port)
+    except OSError as error:
+        print(f"Could not bind port {args.http_port} ({error}). Close whatever is using it, or run as administrator.")
+        return
     if not args.no_dns:
         try:
             start_dns(ip, args.dns_port)
@@ -230,9 +234,17 @@ def main():
     p.add_argument("--stage1-timeout", type=float, default=900.0)
     p.add_argument("--timeout", type=float, default=600.0)
     p.add_argument("--log", default="sbplug_converted.csv")
+    p.add_argument("--txt", default="sbplug_flashed.txt", help="numbered text log of flashed plugs, both MACs, in flash order")
     p.add_argument("--http-port", type=int, default=80)
     p.add_argument("--dns-port", type=int, default=53)
+    p.add_argument("--check", action="store_true", help="load the bundled firmware and exit (no network)")
     args = p.parse_args()
+    if args.check:
+        fw = Firmware()
+        print(f"firmware source: {data_dir()}")
+        print(f"app.bin: {len(fw.app)} bytes")
+        print(f"payload.bin: {len(fw.payload)} bytes, md5 {fw.md5}")
+        return
     # convert() expects these names
     args.portal = True
     args.skip_dns_check = True
