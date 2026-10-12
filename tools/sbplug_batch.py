@@ -63,15 +63,15 @@ SETTLE_SECONDS = 60
 SELF_APPLY_SECONDS = 630
 
 # 1.5 x 0.5 inch direct-thermal label at 203 dpi: 305 x 112 dots. ~SD30 is max
-# darkness. Date on top, then the two MACs big, all within the left ~200 dots. The
-# right third is free for a QR of both MACs, e.g. ^FO210,18^BQN,2,3^FDMA,<BLE> <WIFI>^FS
-# with the MACs uppercase and colonless so the QR stays small.
+# darkness. Date on top and the two MACs big on the left; a QR of both MACs on the
+# right. Keep ^PW305: the media is center-loaded, so ^PW also shifts the image sideways.
 LABEL_ZPL = (
     "~SD30\n"
     "^XA^CI28^PW305^LL112^LH0,0"
     "^FO6,2^A0N,24,13^FD{date}^FS"
     "^FO6,28^A0N,42,16^FDBLE:  {ble}^FS"
     "^FO6,70^A0N,42,16^FDWiFi: {wifi}^FS"
+    "^FO210,8^BQN,2,3^FDMA,{qr}^FS"
     "^XZ"
 )
 
@@ -447,7 +447,10 @@ async def wait_for_flash(plug, tracker, args):
 
 def print_label(printer, ble_mac, wifi_mac):
     host, _, port = printer.partition(":")
-    zpl = LABEL_ZPL.format(ble=ble_mac.upper(), wifi=wifi_mac.upper(), date=datetime.date.today().isoformat())
+    ble, wifi = ble_mac.upper(), wifi_mac.upper()
+    # Uppercase and no colons keeps the QR in compact alphanumeric mode so it fits.
+    qr = f"B {ble.replace(':', '')} W {wifi.replace(':', '')}"
+    zpl = LABEL_ZPL.format(ble=ble, wifi=wifi, qr=qr, date=datetime.date.today().isoformat())
     with socket.create_connection((host, int(port or 9100)), timeout=10) as connection:
         connection.sendall(zpl.encode("ascii"))
 
