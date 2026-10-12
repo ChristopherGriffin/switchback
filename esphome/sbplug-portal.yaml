@@ -1,0 +1,15 @@
+#==============================================================================
+# switchbota payload, portal variant
+#==============================================================================
+# No network is built in. After flashing, the plug offers an open hotspot named
+# sbplug-xxxxxx. Join it and the captive portal asks which Wi-Fi to use.
+#
+# REQUIRED SECRETS: api_encryption_key, ota_password
+# BUILD:            python tools/build_payload.py portal
+#==============================================================================
+
+packages:
+  base: !include sbplug-base.yaml
+
+wifi:
+  ap:

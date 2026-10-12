@@ -8,7 +8,8 @@ Runs on a box with a Bluetooth radio. For each plug it:
      and wohand.com must resolve to the server)
   3. polls OTA progress over BLE until the plug reboots into switchbota
   4. follows the server's /events feed for that plug's MAC
-  5. waits for sbplug-xxxxxx to show up on mDNS
+  5. waits for sbplug-xxxxxx to show up on mDNS (implant payload), or for the
+     flasher to finish and stay quiet (--portal, for the portal payload)
   6. prints a ZPL label, if --printer is given
 
 It does one plug per run unless --count says otherwise.
@@ -47,14 +48,17 @@ OTA_HOSTS = ("www.wohand.com", "wohand.com")
 ESPHOME_SERVICE = "_esphomelib._tcp.local."
 ESPHOME_PREFIX = "sbplug"
 
-# 1.5 x 0.75 inch label at 203 dpi (GK420t): 305 x 152 dots. Text on the left, a QR code
+# A flasher that failed its verify comes back for payload.md5 well inside this
+SETTLE_SECONDS = 60
+
+# 1.5 x 0.5 inch label at 203 dpi (GK420t): 305 x 102 dots. Text on the left, a QR code
 # of the device name on the right. A Code 128 of the name does not fit at a scannable width.
 LABEL_ZPL = (
-    "^XA^CI28^PW305^LL152^LH0,0"
-    "^FO10,16^A0N,30,30^FD{name}^FS"
-    "^FO10,58^A0N,22,22^FD{mac}^FS"
-    "^FO10,94^A0N,20,20^FD{date}^FS"
-    "^FO218,20^BQN,2,3^FDMA,{name}^FS"
+    "^XA^CI28^PW305^LL102^LH0,0"
+    "^FO10,10^A0N,28,28^FD{name}^FS"
+    "^FO10,44^A0N,20,20^FD{mac}^FS"
+    "^FO10,72^A0N,18,18^FD{date}^FS"
+    "^FO218,6^BQN,2,3^FDMA,{name}^FS"
     "^XZ"
 )
 
@@ -139,6 +143,7 @@ class PlugEvents:
         self.mac = plug.wifi_mac
         self.ips = set()
         self.seen = []
+        self.done_at = None  # when the last download finished, cleared if the flasher starts over
 
     async def update(self):
         try:
@@ -155,6 +160,10 @@ class PlugEvents:
             self.seen.append(event["event"])
             detail = f" after {event['seconds']}s" if "seconds" in event else ""
             log(f"server: {event['event']} from {event['ip']}{detail}")
+            if event["event"] == "payload_done":
+                self.done_at = time.monotonic()
+            elif event["event"] in ("payload_md5", "payload_start"):
+                self.done_at = None
             if event["event"] == "payload_md5" and "payload_start" in self.seen:
                 log("server: the flasher is retrying, leave the plug powered")
 
@@ -242,7 +251,19 @@ async def wait_for_esphome(plug, tracker, args):
                 return info
     finally:
         await zeroconf.async_close()
-    raise Failed(f"{plug.name} never appeared on mDNS. Leave the plug powered and check the server log.")
+    raise Failed(f"{plug.name} never appeared on mDNS. Leave the plug powered and check the server log. "
+                 "If the server has the portal payload, use --portal.")
+
+
+async def wait_for_flash(plug, tracker, args):
+    """A portal payload never joins Wi-Fi, so success is the flasher finishing and not coming back."""
+    deadline = time.monotonic() + args.timeout
+    while time.monotonic() < deadline:
+        await tracker.update()
+        if tracker.done_at and time.monotonic() - tracker.done_at > SETTLE_SECONDS:
+            return
+        await asyncio.sleep(2)
+    raise Failed(f"the flasher never finished writing {plug.name}. Leave the plug powered and check the server log.")
 
 
 def print_label(printer, name, wifi_mac):
@@ -259,13 +280,17 @@ async def convert(plug, feed, args):
     log(f"converting {plug}, expecting {plug.name}")
     await run_stage1(plug, tracker, args)
     log("stage 1 done, waiting for switchbota to write the payload. Do not unplug.")
-    info = await wait_for_esphome(plug, tracker, args)
-
-    address = ", ".join(info.parsed_addresses())
-    reported = (info.properties.get(b"mac") or b"").decode()
-    log(f"{plug.name} is up at {address}")
-    if reported and reported != plug.wifi_mac.replace(":", ""):
-        log(f"warning: it reports MAC {reported}, expected {plug.wifi_mac}")
+    if args.portal:
+        await wait_for_flash(plug, tracker, args)
+        address = "hotspot"
+        log(f"{plug.name} is flashed. Join its hotspot, also named {plug.name}, to put it on Wi-Fi.")
+    else:
+        info = await wait_for_esphome(plug, tracker, args)
+        address = ", ".join(info.parsed_addresses())
+        reported = (info.properties.get(b"mac") or b"").decode()
+        log(f"{plug.name} is up at {address}")
+        if reported and reported != plug.wifi_mac.replace(":", ""):
+            log(f"warning: it reports MAC {reported}, expected {plug.wifi_mac}")
 
     with open(args.log, "a", newline="") as handle:
         csv.writer(handle).writerow(
@@ -317,13 +342,16 @@ def main():
     parser.add_argument("--count", type=int, default=1, help="how many plugs to convert this run (default 1)")
     parser.add_argument("--only", type=str.lower, help="only touch the plug with this BLE MAC")
     parser.add_argument("--yes", action="store_true", help="do not ask before each plug")
+    parser.add_argument("--portal", action="store_true",
+                        help="the server has the portal payload: finish when the flasher is done "
+                             "instead of waiting for the plug on mDNS")
     parser.add_argument("--scan-only", action="store_true", help="list the Plug Minis in range and exit")
     parser.add_argument("--scan-time", type=float, default=10, help="seconds per BLE scan")
     parser.add_argument("--fw-byte", type=lambda text: int(text, 16), default=0x0C,
                         help="version byte for the OTA start command, hex. 0C is v1.2, 0D v1.3, 0E v1.4. "
                              "It has to differ from what the plug runs now.")
     parser.add_argument("--stage1-timeout", type=float, default=300, help="seconds allowed for the stock OTA")
-    parser.add_argument("--timeout", type=float, default=600, help="seconds allowed from stage 1 to mDNS")
+    parser.add_argument("--timeout", type=float, default=600, help="seconds allowed after stage 1")
     parser.add_argument("--skip-dns-check", action="store_true", help="do not check wohand.com from this box")
     parser.add_argument("--printer", help="ZPL printer as host:port (port defaults to 9100). No label without it.")
     parser.add_argument("--print-test", action="store_true", help="print a sample label and exit")

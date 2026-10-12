@@ -1,0 +1,97 @@
+#==============================================================================
+# SwitchBot Plug Mini (W1901400 / W1901401) - switchbota payload, shared part
+#==============================================================================
+# Do not build this file directly. Build one of the two variants that include it:
+#
+#   sbplug-portal.yaml   the plug comes up as a hotspot and you pick the network
+#   sbplug-implant.yaml  the network from secrets.yaml is built in
+#
+# The easy way is tools/build_payload.py, which also checks secrets.yaml and
+# copies the result to server/bin/payload.bin.
+#
+# This firmware only has to get the plug onto Wi-Fi with a known API key and OTA
+# password, so the real config can follow over OTA.
+#
+# SIZE LIMIT:
+#   The flasher writes from 0x0 and can only write WRITE_SIZE (0x171000 =
+#   1,511,424 bytes), so firmware.factory.bin has to stay under that. That is
+#   why there are no BLE components here. Add those in the real config.
+#
+# PARTITIONS:
+#   This image also lays down the partition table the plug keeps from now on
+#   (ESPHome default for 4MB: two 0x1C0000 app slots). OTA never changes it.
+#
+# BUTTON:
+#   Short press toggles the relay.
+#   Hold for 10 seconds to factory reset. That wipes any Wi-Fi details saved
+#   through the hotspot, so a portal build goes back to offering its hotspot.
+#
+# BLUE LED:
+#   Blinks while the plug is not on Wi-Fi.
+#==============================================================================
+
+esphome:
+  name: sbplug
+  name_add_mac_suffix: true
+  platformio_options:
+    board_build.flash_mode: dio
+
+esp32:
+  board: esp32-c3-devkitm-1
+  variant: ESP32C3
+  flash_size: 4MB
+  framework:
+    type: esp-idf
+
+# UART0 is what the serial pads expose, so boot logs show up on the recovery path
+logger:
+  hardware_uart: UART0
+
+api:
+  reboot_timeout: 0s
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  platform: esphome
+  password: !secret ota_password
+
+captive_portal:
+
+status_led:
+  pin:
+    number: GPIO8
+    inverted: true
+
+switch:
+  - platform: gpio
+    id: relay
+    name: "Relay"
+    pin: GPIO6
+    restore_mode: RESTORE_DEFAULT_OFF
+
+button:
+  - platform: factory_reset
+    id: factory_reset_button
+    internal: true
+
+binary_sensor:
+  - platform: gpio
+    id: plug_button
+    internal: true
+    pin:
+      number: GPIO2
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on: 10ms
+    on_multi_click:
+      - timing:
+          - ON for at most 1s
+          - OFF for at least 0.3s
+        then:
+          - switch.toggle: relay
+      - timing:
+          - ON for at least 10s
+        then:
+          - button.press: factory_reset_button
