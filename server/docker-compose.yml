@@ -1,0 +1,19 @@
+# Runs the switchbota server without installing Node on the host.
+#
+#   1. put app.bin and payload.bin in ./bin
+#   2. docker compose up -d
+#   3. docker compose logs -f
+#
+# Host networking gives the server port 80 directly and lets it read the host's
+# ARP table, which is how stage 1 requests get a MAC address.
+# After replacing payload.bin: docker compose restart
+
+services:
+  switchbota:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    network_mode: host
+    restart: unless-stopped
+    command: sh -c "[ -d node_modules ] || npm ci --omit=dev; exec node index.js"
