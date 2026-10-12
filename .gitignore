@@ -5,3 +5,4 @@ sbplug_converted.csv
 __pycache__/
 .venv/
 dist/
+build/
