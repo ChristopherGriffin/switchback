@@ -62,14 +62,16 @@ SETTLE_SECONDS = 60
 # How long a plug that is never told to apply its download takes to do it by itself
 SELF_APPLY_SECONDS = 630
 
-# 1.5 x 0.5 inch label at 203 dpi (GK420t): 305 x 102 dots. Text on the left, a QR code
-# of the device name on the right. A Code 128 of the name does not fit at a scannable width.
+# enKo 7050 direct-thermal label on a GK420t (203 dpi): about 1 x 0.5 inch, roughly
+# 210 x 112 dots printable. ~SD30 is max darkness. Date on top, then the two MACs big.
+# No QR: the big MAC lines fill this narrow label, so a QR has nowhere to go. On wider
+# stock, add a QR of both MACs on the right.
 LABEL_ZPL = (
-    "^XA^CI28^PW305^LL102^LH0,0"
-    "^FO10,10^A0N,28,28^FD{name}^FS"
-    "^FO10,44^A0N,20,20^FD{mac}^FS"
-    "^FO10,72^A0N,18,18^FD{date}^FS"
-    "^FO218,6^BQN,2,3^FDMA,{name}^FS"
+    "~SD30\n"
+    "^XA^CI28^PW305^LL112^LH0,0"
+    "^FO6,2^A0N,24,13^FD{date}^FS"
+    "^FO6,28^A0N,42,16^FDBLE:  {ble}^FS"
+    "^FO6,70^A0N,42,16^FDWiFi: {wifi}^FS"
     "^XZ"
 )
 
@@ -443,9 +445,9 @@ async def wait_for_flash(plug, tracker, args):
     raise Failed(f"the flasher never finished writing {plug.name}. Leave the plug powered and check the server log.")
 
 
-def print_label(printer, name, wifi_mac):
+def print_label(printer, ble_mac, wifi_mac):
     host, _, port = printer.partition(":")
-    zpl = LABEL_ZPL.format(name=name, mac=wifi_mac.upper(), date=datetime.date.today().isoformat())
+    zpl = LABEL_ZPL.format(ble=ble_mac.upper(), wifi=wifi_mac.upper(), date=datetime.date.today().isoformat())
     with socket.create_connection((host, int(port or 9100)), timeout=10) as connection:
         connection.sendall(zpl.encode("ascii"))
 
@@ -496,7 +498,7 @@ async def convert(plug, feed, args):
     log(f"logged as #{number} in {args.txt} (BLE {plug.ble_mac}, Wi-Fi {plug.wifi_mac})")
     if args.printer:
         try:
-            print_label(args.printer, plug.name, plug.wifi_mac)
+            print_label(args.printer, plug.ble_mac, plug.wifi_mac)
             log(f"label sent to {args.printer}")
         except OSError as error:
             log(f"label not printed: {error}")
@@ -506,7 +508,7 @@ async def run(args):
     if args.print_test:
         if not args.printer:
             raise Failed("--print-test needs --printer host:port")
-        print_label(args.printer, f"{ESPHOME_PREFIX}-000000", "00:00:00:00:00:00")
+        print_label(args.printer, "d8:3b:da:00:00:02", "d8:3b:da:00:00:00")
         return
     if args.scan_only:
         for plug in await scan(args):

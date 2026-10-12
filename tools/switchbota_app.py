@@ -359,7 +359,12 @@ def main():
         fw = Firmware()
         print(f"firmware source: {data_dir()}")
         print(f"app.bin: {len(fw.app)} bytes")
-        print(f"payload.bin: {len(fw.payload)} bytes, md5 {fw.md5}")
+        print(f"portal payload: {len(fw.ship)} bytes")
+        if fw.direct:
+            import wifi_patch
+            print(f"direct payload: {len(fw.direct)} bytes, patch self-check {wifi_patch.verify_image(fw.direct)}")
+        else:
+            print("direct payload: MISSING (direct mode unavailable)")
         return
     # convert() expects these names
     args.portal = (args.mode == "portal")  # finalized in run() after the prompt
