@@ -4,6 +4,10 @@
 
 ![A SwitchBot Plug Mini converted by Switchback, with its printed label: date, BLE and Wi-Fi MACs, and a QR code](./images/plug-label.jpg)
 
+### [Download switchback.exe](https://github.com/ChristopherGriffin/switchback/releases/latest/download/switchback.exe)
+
+Windows, one file, always the latest version. Older versions and checksums are on the [Releases page](https://github.com/ChristopherGriffin/switchback/releases). Then follow [the easy way](#the-easy-way-switchbackexe) below.
+
 Switchback replaces the stock firmware on the SwitchBot Plug Mini with [ESPHome](https://esphome.io), over Wi-Fi, without opening the case and **without the SwitchBot app**. It works on the W1901400 and the HomeKit W1901401. Both are the same ESP32-C3 hardware.
 
 It is a fork of [kendallgoto/switchbota](https://github.com/kendallgoto/switchbota). The original puts Tasmota 11.1 on the plug and you move to ESPHome from there, and it needs the SwitchBot app to get the plug online first. This fork writes ESPHome directly and sets the plug's Wi-Fi itself over Bluetooth, so there is no app, no phone, and no SwitchBot account in the loop. It ships as a single Windows program.
@@ -34,7 +38,7 @@ This is a proof of concept and comes with no warranty.
 
 One file, nothing to install. No git, no Node, no Python, no ESPHome.
 
-1. Download `switchback.exe` from the [Releases page](https://github.com/ChristopherGriffin/switchback/releases).
+1. **[Download switchback.exe](https://github.com/ChristopherGriffin/switchback/releases/latest/download/switchback.exe)** (the latest version; older ones are on the [Releases page](https://github.com/ChristopherGriffin/switchback/releases)).
 2. Set up DNS so `wohand.com` points at this PC (see the next section). You only do this once.
 3. Plug in a SwitchBot Plug Mini near the PC and run `switchback.exe`.
 
