@@ -62,10 +62,10 @@ SETTLE_SECONDS = 60
 # How long a plug that is never told to apply its download takes to do it by itself
 SELF_APPLY_SECONDS = 630
 
-# enKo 7050 direct-thermal label on a GK420t (203 dpi): about 1 x 0.5 inch, roughly
-# 210 x 112 dots printable. ~SD30 is max darkness. Date on top, then the two MACs big.
-# No QR: the big MAC lines fill this narrow label, so a QR has nowhere to go. On wider
-# stock, add a QR of both MACs on the right.
+# 1.5 x 0.5 inch direct-thermal label at 203 dpi: 305 x 112 dots. ~SD30 is max
+# darkness. Date on top, then the two MACs big, all within the left ~200 dots. The
+# right third is free for a QR of both MACs, e.g. ^FO210,18^BQN,2,3^FDMA,<BLE> <WIFI>^FS
+# with the MACs uppercase and colonless so the QR stays small.
 LABEL_ZPL = (
     "~SD30\n"
     "^XA^CI28^PW305^LL112^LH0,0"
