@@ -4,3 +4,4 @@ server/node_modules/
 sbplug_converted.csv
 __pycache__/
 .venv/
+dist/

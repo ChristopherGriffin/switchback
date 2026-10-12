@@ -33,6 +33,9 @@ WRITE_SIZE = 0x171000  # keep in step with espressif/main/include/config.h
 REQUIRED = {
     "portal": ("api_encryption_key", "ota_password"),
     "implant": ("api_encryption_key", "ota_password", "wifi_ssid", "wifi_password"),
+    # "ship" is the no-secrets bootstrap bundled into switchbota.exe: API encryption
+    # off and a published default OTA password, so it needs nothing from secrets.yaml.
+    "ship": (),
 }
 
 
@@ -64,11 +67,15 @@ def check_secrets(variant):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("variant", choices=sorted(REQUIRED), help="which payload to build")
-    variant = parser.parse_args().variant
+    parser.add_argument("-o", "--out", help="where to stage the image (default: server/bin/payload.bin)")
+    args = parser.parse_args()
+    variant = args.variant
+    target = Path(args.out) if args.out else PAYLOAD
 
     if importlib.util.find_spec("esphome") is None:
         sys.exit(f"ESPHome is not installed for {sys.executable}. Run this with the Python that has it.")
-    check_secrets(variant)
+    if REQUIRED[variant]:
+        check_secrets(variant)
 
     # Remove the old images first so a stale one can never be staged
     for name in ("firmware.bin", "firmware.factory.bin"):
@@ -81,14 +88,13 @@ def main():
     size = image.stat().st_size
     if size > WRITE_SIZE:
         sys.exit(f"The factory image is {size:,} bytes and the flasher can only write {WRITE_SIZE:,}. Nothing was staged.")
-    PAYLOAD.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(image, PAYLOAD)
-    md5 = hashlib.md5(PAYLOAD.read_bytes()).hexdigest()
-    print(f"\nStaged the {variant} payload at {PAYLOAD}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(image, target)
+    md5 = hashlib.md5(target.read_bytes()).hexdigest()
+    print(f"\nStaged the {variant} payload at {target}")
     print(f"  {size:,} bytes, {WRITE_SIZE - size:,} bytes of headroom, md5 {md5}")
-    print("  Restart the switchbota server so it picks this up.")
-    if variant == "portal":
-        print("  Run tools/sbplug_batch.py with --portal, since these plugs will not join Wi-Fi by themselves.")
+    if variant in ("portal", "ship"):
+        print("  These plugs open a hotspot for Wi-Fi; flash with the portal path.")
 
 
 if __name__ == "__main__":

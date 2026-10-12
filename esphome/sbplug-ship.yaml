@@ -1,0 +1,82 @@
+#==============================================================================
+# switchbota bootstrap shipped inside switchbota.exe
+#==============================================================================
+# This is the no-secrets build. It is the same hardware setup as the other
+# variants, with two differences so it can be shared with everyone:
+#
+#   - API encryption is OFF. The plug is open on your LAN only until you flash
+#     your real config (with your own key) over OTA, which is the next step.
+#   - The OTA password is a published default, "switchbota". Change it when you
+#     flash your real config.
+#
+# It has no Wi-Fi built in, so the plug opens an sbplug-xxxxxx hotspot with a
+# captive portal and you pick the network in a browser.
+#
+# BUILD:  python tools/build_payload.py ship -o dist/payload.bin
+#==============================================================================
+
+esphome:
+  name: sbplug
+  name_add_mac_suffix: true
+  platformio_options:
+    board_build.flash_mode: dio
+
+esp32:
+  board: esp32-c3-devkitm-1
+  variant: ESP32C3
+  flash_size: 4MB
+  framework:
+    type: esp-idf
+
+logger:
+  hardware_uart: UART0
+
+# No encryption on the bootstrap. Flash your own config, with your own key, over OTA.
+api:
+
+ota:
+  platform: esphome
+  password: "switchbota"
+
+wifi:
+  ap:
+
+captive_portal:
+
+status_led:
+  pin:
+    number: GPIO8
+    inverted: true
+
+switch:
+  - platform: gpio
+    id: relay
+    name: "Relay"
+    pin: GPIO6
+    restore_mode: RESTORE_DEFAULT_OFF
+
+button:
+  - platform: factory_reset
+    id: factory_reset_button
+    internal: true
+
+binary_sensor:
+  - platform: gpio
+    id: plug_button
+    internal: true
+    pin:
+      number: GPIO2
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on: 10ms
+    on_multi_click:
+      - timing:
+          - ON for at most 1s
+          - OFF for at least 0.3s
+        then:
+          - switch.toggle: relay
+      - timing:
+          - ON for at least 10s
+        then:
+          - button.press: factory_reset_button
