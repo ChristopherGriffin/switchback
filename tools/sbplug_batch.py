@@ -9,14 +9,14 @@ Runs on a box with a Bluetooth radio. For each plug it:
   3. polls OTA progress over BLE until the plug reboots into switchbota
   4. follows the server's /events feed for that plug's MAC
   5. waits for sbplug-xxxxxx to show up on mDNS
-  6. prints a ZPL label
+  6. prints a ZPL label, if --printer is given
 
 It does one plug per run unless --count says otherwise.
 
     pip install -r requirements.txt
     python sbplug_batch.py --scan-only
     python sbplug_batch.py
-    python sbplug_batch.py --count 10 --yes
+    python sbplug_batch.py --count 10 --yes --printer labelprinter.lan:9100
 """
 
 import argparse
@@ -270,7 +270,7 @@ async def convert(plug, feed, args):
     with open(args.log, "a", newline="") as handle:
         csv.writer(handle).writerow(
             [datetime.datetime.now().isoformat(timespec="seconds"), plug.name, plug.wifi_mac, plug.ble_mac, address])
-    if not args.no_print:
+    if args.printer:
         try:
             print_label(args.printer, plug.name, plug.wifi_mac)
             log(f"label sent to {args.printer}")
@@ -280,6 +280,8 @@ async def convert(plug, feed, args):
 
 async def run(args):
     if args.print_test:
+        if not args.printer:
+            raise Failed("--print-test needs --printer host:port")
         print_label(args.printer, f"{ESPHOME_PREFIX}-000000", "00:00:00:00:00:00")
         return
     if args.scan_only:
@@ -309,7 +311,9 @@ async def run(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--server", default="http://rando.symtus.com", help="switchbota server base URL")
+    parser.add_argument("--server", default="http://www.wohand.com",
+                        help="switchbota server base URL. The default is the name the plugs use, "
+                             "so it works wherever the DNS override does.")
     parser.add_argument("--count", type=int, default=1, help="how many plugs to convert this run (default 1)")
     parser.add_argument("--only", type=str.lower, help="only touch the plug with this BLE MAC")
     parser.add_argument("--yes", action="store_true", help="do not ask before each plug")
@@ -321,8 +325,7 @@ def main():
     parser.add_argument("--stage1-timeout", type=float, default=300, help="seconds allowed for the stock OTA")
     parser.add_argument("--timeout", type=float, default=600, help="seconds allowed from stage 1 to mDNS")
     parser.add_argument("--skip-dns-check", action="store_true", help="do not check wohand.com from this box")
-    parser.add_argument("--printer", default="LABEL-PRINTER.symtus.com:9100", help="ZPL printer host:port")
-    parser.add_argument("--no-print", action="store_true", help="skip the label")
+    parser.add_argument("--printer", help="ZPL printer as host:port (port defaults to 9100). No label without it.")
     parser.add_argument("--print-test", action="store_true", help="print a sample label and exit")
     parser.add_argument("--log", default="sbplug_converted.csv", help="CSV file that converted plugs are appended to")
     args = parser.parse_args()
