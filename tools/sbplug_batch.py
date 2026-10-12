@@ -207,37 +207,51 @@ async def command(client, replies, data):
 
 
 async def run_stage1(plug, tracker, args):
-    """Start the stock OTA and follow it until the plug reboots into switchbota."""
-    replies = asyncio.Queue()
-    async with BleakClient(plug.device, timeout=30) as client:
-        await client.start_notify(NOTIFY_CHAR, lambda _, data: replies.put_nowait(bytes(data)))
-        reply = await command(client, replies, CMD_OTA_START + bytes([args.fw_byte]))
-        log(f"OTA start reply: {hexs(reply)}")
+    """Start the stock OTA and keep asking for progress until the server sees switchbota running.
 
-        started = time.monotonic()
-        progress = None
-        while time.monotonic() - started < args.stage1_timeout:
-            await asyncio.sleep(2)
-            await tracker.update()
-            if tracker.saw("flip", "payload_md5"):
-                return
-            if not tracker.saw("stage1") and time.monotonic() - started > 60:
-                raise Failed("the plug never fetched firmware from the server. Check that it is on Wi-Fi, "
-                             "that its DNS sends wohand.com to the server, and that --fw-byte differs "
-                             "from the firmware version it already runs.")
-            try:
-                reply = await command(client, replies, CMD_OTA_PROGRESS)
-            except (BleakError, OSError):
-                reply = None
-            if not client.is_connected:
-                log("BLE link dropped, the plug is rebooting")
-                return
-            if reply and len(reply) >= 2 and reply[1] != progress:
-                progress = reply[1]
-                log(f"stage 1: {progress}%  [{hexs(reply)}]")
-            if progress is not None and progress >= 100:
-                return
-    raise Failed("stage 1 did not finish in time")
+    The stock firmware drops the BLE link while it downloads and again when it reboots, so a
+    lost link means nothing by itself. The only proof that stage 1 is over is the flasher's
+    own request reaching the server.
+    """
+    started = time.monotonic()
+    start_sent = False
+    last_reply = None
+
+    def stage1_over():
+        if tracker.saw("flip", "payload_md5"):
+            return True
+        if not tracker.saw("stage1") and time.monotonic() - started > 60:
+            raise Failed("the plug never fetched firmware from the server. Check that it is on Wi-Fi, "
+                         "that its DNS sends wohand.com to the server, and that --fw-byte differs "
+                         "from the firmware version it already runs.")
+        return False
+
+    while time.monotonic() - started < args.stage1_timeout:
+        try:
+            async with BleakClient(plug.device, timeout=10) as client:
+                replies = asyncio.Queue()
+                await client.start_notify(NOTIFY_CHAR, lambda _, data: replies.put_nowait(bytes(data)))
+                if not start_sent:
+                    reply = await command(client, replies, CMD_OTA_START + bytes([args.fw_byte]))
+                    log(f"OTA start reply: {hexs(reply)}")
+                    start_sent = True
+                while client.is_connected and time.monotonic() - started < args.stage1_timeout:
+                    await asyncio.sleep(2)
+                    await tracker.update()
+                    if stage1_over():
+                        return
+                    reply = await command(client, replies, CMD_OTA_PROGRESS)
+                    if reply and reply != last_reply:
+                        last_reply = reply
+                        percent = f"{reply[1]}%" if len(reply) >= 2 else "no percentage"
+                        log(f"stage 1 progress: {percent}  [{hexs(reply)}]")
+        except (BleakError, OSError, asyncio.TimeoutError, EOFError):
+            pass
+        await tracker.update()
+        if stage1_over():
+            return
+        await asyncio.sleep(3)
+    raise Failed("stage 1 did not finish in time. The plug is still on stock firmware if it shows up in --scan-only.")
 
 
 def api_reachable(host):
@@ -261,6 +275,12 @@ async def wait_for_esphome(plug, tracker, args):
             # mDNS does not cross VLANs. Where DHCP registers names in DNS, this does.
             if args.domain and await asyncio.to_thread(api_reachable, plug.name + args.domain):
                 return plug.name + args.domain, ""
+            # Needs neither mDNS nor DNS: once the flasher is done, try the address it used.
+            # The plug normally gets the same lease back when it boots into ESPHome.
+            if tracker.done_at:
+                for ip in sorted(tracker.ips):
+                    if await asyncio.to_thread(api_reachable, ip):
+                        return ip, ""
     finally:
         await zeroconf.async_close()
     raise Failed(f"{plug.name} never appeared on the network. Leave the plug powered and check the server log. "
