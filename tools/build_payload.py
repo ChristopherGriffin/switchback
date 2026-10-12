@@ -36,6 +36,8 @@ REQUIRED = {
     # "ship" is the no-secrets bootstrap bundled into switchbota.exe: API encryption
     # off and a published default OTA password, so it needs nothing from secrets.yaml.
     "ship": (),
+    # "direct" is like "ship" but with placeholder Wi-Fi the exe patches at runtime.
+    "direct": (),
 }
 
 

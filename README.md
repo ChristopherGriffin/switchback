@@ -2,9 +2,9 @@
 
 ![switchbot-product-photo](./images/switchbot-product-photo.jpg)
 
-This replaces the stock firmware on the SwitchBot Plug Mini with [ESPHome](https://esphome.io), over Wi-Fi, without opening the case. It works on the W1901400 and the HomeKit W1901401. Both are the same ESP32-C3 hardware.
+This replaces the stock firmware on the SwitchBot Plug Mini with [ESPHome](https://esphome.io), over Wi-Fi, without opening the case and **without the SwitchBot app**. It works on the W1901400 and the HomeKit W1901401. Both are the same ESP32-C3 hardware.
 
-It is a fork of [kendallgoto/switchbota](https://github.com/kendallgoto/switchbota). The original puts Tasmota 11.1 on the plug and you move to ESPHome from there. This fork writes ESPHome directly, and adds a one-command runner, a server installer, a build step for the ESPHome image, and a script that drives the whole conversion over Bluetooth.
+It is a fork of [kendallgoto/switchbota](https://github.com/kendallgoto/switchbota). The original puts Tasmota 11.1 on the plug and you move to ESPHome from there, and it needs the SwitchBot app to get the plug online first. This fork writes ESPHome directly and sets the plug's Wi-Fi itself over Bluetooth, so there is no app, no phone, and no SwitchBot account in the loop. It ships as a single Windows program.
 
 ## Read this first
 
@@ -16,78 +16,83 @@ This is a proof of concept and comes with no warranty.
 
 ## What you need
 
-- A SwitchBot Plug Mini, already joined to your Wi-Fi with the SwitchBot app.
-- A computer with Bluetooth, on the same network, to trigger the plug.
-- A way to point two hostnames at that computer in your DNS (covered below). This is the one piece people get stuck on, so it has its own section.
-- The plug and that computer do not have to be on the same subnet, but the plug has to be able to reach it.
+- A SwitchBot Plug Mini (W1901400 or W1901401), out of the box. The SwitchBot app is **not** needed.
+- A Windows PC with Bluetooth.
+- One network change so the plug fetches our firmware instead of SwitchBot's: your DNS has to send `wohand.com` to the PC. The program checks this for you and tells you exactly what to do. It is the one thing people get stuck on, so it has its own section below.
+- The plug and the PC do not have to be on the same subnet, but the plug has to be able to reach the PC.
 
 ## How it works
 
-1. You join the plug to your Wi-Fi with the SwitchBot app, as normal.
-2. A small server on your computer pretends to be SwitchBot's update server. Your DNS sends the plug there.
-3. A Bluetooth command tells the plug to update. It fetches a tiny flasher from your server, then fetches the ESPHome image and writes it over itself.
+1. The program sets the plug's Wi-Fi over Bluetooth (this is the part that used to need the app).
+2. A small server on the PC stands in for SwitchBot's update server. Your DNS points the plug at it.
+3. A Bluetooth command tells the plug to update. It fetches a tiny flasher from the PC, then the ESPHome image, and writes it over itself.
 4. The plug reboots into ESPHome and appears on your network as `sbplug-xxxxxx`.
 
-## The simple way: run it all from one Windows PC
+## The easy way: switchbota.exe
 
-Your PC does everything: serves the firmware, answers DNS, and talks Bluetooth to the plugs. You need [Node.js](https://nodejs.org), [Python](https://python.org) with ESPHome (`pip install esphome`), and a Bluetooth radio. The script sets up the rest.
+One file, nothing to install. No git, no Node, no Python, no ESPHome.
 
-Get the code:
+1. Download `switchbota.exe` from the [Releases page](https://github.com/ChristopherGriffin/switchbota/releases).
+2. Set up DNS so `wohand.com` points at this PC (see the next section). You only do this once.
+3. Plug in a SwitchBot Plug Mini near the PC and run `switchbota.exe`.
+
+It will:
+
+- check DNS and, if it is not pointed here yet, tell you how to fix it,
+- ask **which Wi-Fi the plug should join**, and the password,
+- ask **direct or portal**:
+  - **direct** - the plug comes up on the Wi-Fi you just typed. Simplest.
+  - **portal** - after flashing, the plug opens its own `sbplug-xxxxxx` hotspot and you pick the Wi-Fi in a browser. Use this if the network you flash over is not the plug's final home.
+- find the plug over Bluetooth, set its Wi-Fi, and flash it to ESPHome.
+
+The first run shows a one-time Windows Firewall prompt (it needs to serve on the network). Allow it. The program is not code-signed, so Windows SmartScreen may say "unknown publisher"; click "More info" then "Run anyway".
+
+It writes `sbplug_flashed.txt` next to itself: a numbered list of every plug done, with both MAC addresses, handy for labels.
+
+If a plug does not convert, it is unharmed as long as it still shows up in a Bluetooth scan. Leave it powered and run again.
+
+## Point your plugs' DNS at the PC
+
+The plug looks up `wohand.com` to get its firmware. You make that name resolve to the PC running `switchbota.exe` instead of to SwitchBot. The program checks this at startup and prints the fix if it is not set. Pick whichever you can do:
+
+- **Your router (simplest).** Set the router's DHCP "DNS server" to the PC's address. `switchbota.exe` runs a DNS server, so every other name still resolves normally; only `wohand.com` is redirected.
+- **Just the plugs' network / VLAN.** If the plugs are on their own network, set that network's DNS server to the PC's address.
+- **Your own DNS (Pi-hole, AdGuard Home, Technitium, pfSense).** Add records sending `wohand.com` and `www.wohand.com` to the PC's address.
+
+To check from another device:
+
+```
+nslookup www.wohand.com
+```
+
+It should answer with the PC's address.
+
+## After the plug is on ESPHome
+
+The flashed image is a small bootstrap: it gets the plug on Wi-Fi and leaves it open to ESPHome's over-the-air updates (OTA password `switchbota`, change it when you flash your own config). Adopt it in ESPHome or Home Assistant and push your real configuration over OTA. A full config for this hardware (relay, button, power monitoring, LEDs) is in [esphome-miniplug-framework](https://github.com/ChristopherGriffin/esphome-miniplug-framework).
+
+The button: a short press toggles the relay, and holding it for 10 seconds factory resets. On a portal plug, a reset sends it back to its hotspot.
+
+## Power users: from the repo
+
+If you want to build the firmware yourself or script a batch, clone the repo and use the Python tools. You need Python 3.10 to 3.13 with ESPHome (`pip install esphome`), plus `bleak` and `zeroconf` (`pip install bleak zeroconf`).
 
 ```
 git clone -b esphome-direct https://github.com/ChristopherGriffin/switchbota.git
 cd switchbota
 ```
 
-**Step 1, one time: point your plugs at this PC for DNS.** Run the script once to see this PC's address:
+- Build a payload: `python tools/build_payload.py portal` (or `implant` to bake your own Wi-Fi in from `esphome/secrets.yaml`, or `direct` for the patchable image the exe uses).
+- Run the all-in-one tool (server + DNS + Bluetooth flasher):
+  `python tools/switchbota_app.py` and answer the prompts, the same flow as the exe.
+- Just the Bluetooth flasher against a server elsewhere:
+  `python tools/sbplug_batch.py --server http://<server> --wifi-ssid "<name>" --wifi-pass "<pw>"`
 
-```powershell
-.\switchbota.ps1
-```
+On Windows there is also `switchbota.ps1`, which sets up the Python environment and runs the tool for you.
 
-It prints a line like `This PC is 192.168.1.39` and the DNS instructions. Set that up (see the DNS section below), then stop the script with Ctrl+C.
+## A dedicated always-on server
 
-**Step 2: convert a plug.**
-
-```powershell
-.\switchbota.ps1 -Flash
-```
-
-This builds the ESPHome image the first time (that takes a while, it downloads a toolchain), starts the server, scans for a plug over Bluetooth, and asks before converting it. A status bar shows each stage. Leave the plug powered until it says the plug is up.
-
-That is the whole thing. Options:
-
-- `.\switchbota.ps1 -Flash -Implant` builds your Wi-Fi name and password into the plug, so it joins your network by itself. By default (without `-Implant`) the plug comes up as its own hotspot and you pick the network through a captive portal. The default needs nothing from you; implant needs your Wi-Fi in `esphome\secrets.yaml`.
-- `.\switchbota.ps1 -NoDns` runs the server without the built-in DNS, for when you redirect wohand.com some other way (a Pi-hole, your router, Technitium).
-- `.\switchbota.ps1 -Rebuild` rebuilds the image, for after you change a setting.
-
-If a plug does not convert, the plug is unharmed as long as it still shows up in a Bluetooth scan. Leave it powered and try again.
-
-## Point your plugs' DNS at the server
-
-The plug looks up `wohand.com` and `www.wohand.com`. You make those resolve to your server instead of SwitchBot. Pick whichever you can do:
-
-- **Let the server do it.** `switchbota.ps1` runs a DNS server for you. Set your router's DHCP "DNS server" to your PC's address, or set it on just the network the plugs are on. Everything keeps resolving normally; only wohand.com is redirected. This is the simplest if you do not run your own DNS.
-- **Pi-hole or AdGuard Home.** Add a local DNS record (Pi-hole: Local DNS, DNS Records) or a DNS rewrite (AdGuard: Filters, DNS rewrites) sending `wohand.com` and `www.wohand.com` to the server's address. Then run with `-NoDns`.
-- **Technitium, pfSense, or similar.** Add host overrides for `wohand.com` and `www.wohand.com` pointing at the server, and run with `-NoDns`.
-
-Check it from another device on the network:
-
-```
-nslookup www.wohand.com
-```
-
-It should answer with your server's address.
-
-## After the plug is on ESPHome
-
-The image this writes is a small bootstrap. It gets the plug on Wi-Fi with an API key and OTA password (in `esphome\secrets.yaml`, generated for you on first run). From there, adopt it in ESPHome or Home Assistant and push your real configuration over OTA. A full plug config for this hardware (relay, button, power monitoring, LEDs) lives in [esphome-miniplug-framework](https://github.com/ChristopherGriffin/esphome-miniplug-framework).
-
-The button on the plug: a short press toggles the relay, and holding it for 10 seconds factory resets. On a portal build, a reset sends it back to its hotspot.
-
-## The other way: a dedicated always-on server
-
-If you would rather run the server on a Linux box (a Pi, a NUC, a VM) and keep it up, use the installer. On Debian or Ubuntu:
+To keep the firmware server up on a Linux box (a Pi, a NUC, a VM) instead of the PC, use the installer. On Debian or Ubuntu:
 
 ```
 git clone -b esphome-direct https://github.com/ChristopherGriffin/switchbota.git
@@ -95,22 +100,22 @@ sudo sh switchbota/server/install.sh
 sudo sh switchbota/server/install.sh build portal
 ```
 
-It installs Docker if needed, builds the image, and runs the server. Then point your DNS at that box (the DNS section above), and run the Bluetooth flasher from any computer with Bluetooth:
+It installs Docker if needed, builds the image, and runs the server. Point your DNS at that box, then run the Bluetooth flasher from any computer with Bluetooth:
 
 ```
-python tools/sbplug_batch.py --server http://<that box's address>
+python tools/sbplug_batch.py --server http://<that box's address> --wifi-ssid "<name>" --wifi-pass "<pw>"
 ```
 
 ## If something goes wrong
 
-- **The plug never fetches firmware.** Its DNS is not reaching your server. Check `nslookup www.wohand.com` from a device on the plug's network, and that the plug can reach the server on port 80.
-- **The flasher says a port is busy.** Something else on the PC is using port 80 or 53. Close it, or use the dedicated-server path on another box.
-- **The plug is not found over Bluetooth.** Make sure it is powered and nearby, and that your computer's Bluetooth is on. A plug already converted will not show up as a SwitchBot device any more.
-- **A plug got stuck mid-convert.** As long as it still appears in a Bluetooth scan, it is still on stock firmware and fine. Run the conversion again.
-- **It is actually bricked.** It stopped responding during the write. Recovery is opening the case and flashing over the serial pads, which are the four pads inside.
+- **The plug never fetches firmware.** Its DNS is not reaching the server. Run `nslookup www.wohand.com` from a device on the plug's network, and check the plug can reach the PC on port 80.
+- **A port is busy.** Something else on the PC is using port 80 or 53. Close it, or use the dedicated-server path on another box.
+- **The plug is not found over Bluetooth.** Make sure it is powered and nearby and the PC's Bluetooth is on. A plug already converted no longer shows up as a SwitchBot device.
+- **A plug got stuck mid-convert.** As long as it still appears in a Bluetooth scan it is still on stock firmware and fine. Run it again.
+- **It is actually bricked.** It stopped responding during the write. Recovery is opening the case and flashing over the four serial pads inside.
 
 ## Credits
 
-Fork of [kendallgoto/switchbota](https://github.com/kendallgoto/switchbota). The hard reverse engineering of the OTA and BLE process is theirs. This fork adds the direct-to-ESPHome path and the tooling around it.
+Fork of [kendallgoto/switchbota](https://github.com/kendallgoto/switchbota). The original reverse engineering of the OTA and BLE update process is theirs. This fork adds the direct-to-ESPHome path, the Bluetooth Wi-Fi provisioning that drops the app, and the tooling around it.
 
 Licensed under the GNU GPL v3, same as upstream.

@@ -39,6 +39,7 @@ jobs:
           mkdir -p server/bin dist
           gh release download "${{ steps.tag.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p app.bin -D server/bin
           gh release download "${{ steps.tag.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p payload-ship.bin -O dist/payload.bin
+          gh release download "${{ steps.tag.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p payload-direct.bin -O dist/payload-direct.bin
         env:
           GH_TOKEN: ${{ github.token }}
 

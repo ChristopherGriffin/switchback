@@ -76,7 +76,20 @@ class LiveFeed:
 class Firmware:
     def __init__(self):
         self.app = (data_dir() / "app.bin").read_bytes()
-        self.payload = (data_dir() / "payload.bin").read_bytes()
+        self.ship = (data_dir() / "payload.bin").read_bytes()  # portal build (no Wi-Fi)
+        direct = data_dir() / "payload-direct.bin"             # patchable build (placeholder Wi-Fi)
+        self.direct = direct.read_bytes() if direct.exists() else None
+        self.select("portal", None, None)
+
+    def select(self, mode, ssid, password):
+        """Choose what to serve: the portal build, or the direct build patched with the Wi-Fi."""
+        if mode == "direct" and ssid:
+            if not self.direct:
+                raise RuntimeError("direct mode needs payload-direct.bin alongside the app")
+            import wifi_patch
+            self.payload = wifi_patch.patch_wifi(self.direct, ssid, password or "")
+        else:
+            self.payload = self.ship
         self.md5 = hashlib.md5(self.payload).hexdigest()
 
 
@@ -292,7 +305,14 @@ async def run(args):
         choice = (await asyncio.to_thread(input, "  choose 1 or 2: ")).strip()
         args.mode = "portal" if choice.startswith("2") else "direct"
     args.portal = (args.mode == "portal")
-    print(f"mode: {args.mode}")
+    if args.mode == "direct":
+        try:
+            fw.select("direct", args.wifi_ssid, args.wifi_pass)
+        except Exception as error:
+            print(f"Could not prepare the direct firmware ({error}). Falling back to portal.")
+            args.mode, args.portal = "portal", True
+            fw.select("portal", None, None)
+    print(f"mode: {args.mode}; serving {len(fw.payload)} bytes, md5 {fw.md5}")
 
     handled = set()
     converted = 0

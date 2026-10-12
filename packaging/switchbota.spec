@@ -14,10 +14,11 @@ root = os.path.abspath(os.path.join(SPECPATH, ".."))
 
 datas = [
     (os.path.join(root, "server", "bin", "app.bin"), "."),
-    (os.path.join(root, "dist", "payload.bin"), "."),
+    (os.path.join(root, "dist", "payload.bin"), "."),         # portal build
+    (os.path.join(root, "dist", "payload-direct.bin"), "."),  # patchable build for direct mode
 ]
 binaries = []
-hiddenimports = ["sbplug_batch"]
+hiddenimports = ["sbplug_batch", "wifi_patch"]
 
 # bleak and zeroconf pull in platform backends (WinRT on Windows) that PyInstaller
 # does not always find on its own.

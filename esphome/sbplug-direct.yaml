@@ -1,0 +1,84 @@
+#==============================================================================
+# switchbota bootstrap for "direct" mode in switchbota.exe
+#==============================================================================
+# Same as the ship build, but with fixed-size placeholder Wi-Fi credentials.
+# The exe overwrites these placeholders with the Wi-Fi the person types in, on
+# the fly, and fixes the image checksum and hash, so the plug comes up on their
+# network with no rebuild and no second step.
+#
+# The placeholders are a bogus SSID, so if an image is ever served UNpatched the
+# plug just falls back to its hotspot (captive portal) instead of joining junk.
+#
+# Placeholders (exact lengths matter: 32-byte SSID slot, 63-byte password slot):
+#   SSID:     SB_SSID_ + 24 'A'  = 32 bytes
+#   password: SB_PASS_ + 55 'B'  = 63 bytes
+#
+# BUILD:  python tools/build_payload.py direct -o dist/payload-direct.bin
+#==============================================================================
+
+esphome:
+  name: sbplug
+  name_add_mac_suffix: true
+  platformio_options:
+    board_build.flash_mode: dio
+
+esp32:
+  board: esp32-c3-devkitm-1
+  variant: ESP32C3
+  flash_size: 4MB
+  framework:
+    type: esp-idf
+
+logger:
+  hardware_uart: UART0
+
+api:
+
+ota:
+  platform: esphome
+  password: "switchbota"
+
+wifi:
+  ssid: "SB_SSID_AAAAAAAAAAAAAAAAAAAAAAAA"
+  password: "SB_PASS_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+  ap:
+
+captive_portal:
+
+status_led:
+  pin:
+    number: GPIO8
+    inverted: true
+
+switch:
+  - platform: gpio
+    id: relay
+    name: "Relay"
+    pin: GPIO6
+    restore_mode: RESTORE_DEFAULT_OFF
+
+button:
+  - platform: factory_reset
+    id: factory_reset_button
+    internal: true
+
+binary_sensor:
+  - platform: gpio
+    id: plug_button
+    internal: true
+    pin:
+      number: GPIO2
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on: 10ms
+    on_multi_click:
+      - timing:
+          - ON for at most 1s
+          - OFF for at least 0.3s
+        then:
+          - switch.toggle: relay
+      - timing:
+          - ON for at least 10s
+        then:
+          - button.press: factory_reset_button
