@@ -1,5 +1,5 @@
 #==============================================================================
-# switchbota bootstrap for "direct" mode in switchbota.exe
+# Switchback bootstrap for "direct" mode in switchback.exe
 #==============================================================================
 # Same as the ship build, but with fixed-size placeholder Wi-Fi credentials.
 # The exe overwrites these placeholders with the Wi-Fi the person types in, on

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the ESPHome image that switchbota writes to the plug and stage it for the server.
+"""Build the ESPHome image that Switchback writes to the plug and stage it for the server.
 
     python tools/build_payload.py portal
         The plug comes up as a hotspot named sbplug-xxxxxx with a captive portal,
@@ -33,7 +33,7 @@ WRITE_SIZE = 0x171000  # keep in step with espressif/main/include/config.h
 REQUIRED = {
     "portal": ("api_encryption_key", "ota_password"),
     "implant": ("api_encryption_key", "ota_password", "wifi_ssid", "wifi_password"),
-    # "ship" is the no-secrets bootstrap bundled into switchbota.exe: API encryption
+    # "ship" is the no-secrets bootstrap bundled into switchback.exe: API encryption
     # off and a published default OTA password, so it needs nothing from secrets.yaml.
     "ship": (),
     # "direct" is like "ship" but with placeholder Wi-Fi the exe patches at runtime.

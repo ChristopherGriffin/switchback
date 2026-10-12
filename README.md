@@ -1,8 +1,10 @@
-# SwitchbOTA for ESPHome
+# Switchback
 
-![switchbot-product-photo](./images/switchbot-product-photo.jpg)
+**SwitchBot Plug Mini to ESPHome. No app, no cloud, one exe.**
 
-This replaces the stock firmware on the SwitchBot Plug Mini with [ESPHome](https://esphome.io), over Wi-Fi, without opening the case and **without the SwitchBot app**. It works on the W1901400 and the HomeKit W1901401. Both are the same ESP32-C3 hardware.
+![A SwitchBot Plug Mini converted by Switchback, with its printed label: date, BLE and Wi-Fi MACs, and a QR code](./images/plug-label.jpg)
+
+Switchback replaces the stock firmware on the SwitchBot Plug Mini with [ESPHome](https://esphome.io), over Wi-Fi, without opening the case and **without the SwitchBot app**. It works on the W1901400 and the HomeKit W1901401. Both are the same ESP32-C3 hardware.
 
 It is a fork of [kendallgoto/switchbota](https://github.com/kendallgoto/switchbota). The original puts Tasmota 11.1 on the plug and you move to ESPHome from there, and it needs the SwitchBot app to get the plug online first. This fork writes ESPHome directly and sets the plug's Wi-Fi itself over Bluetooth, so there is no app, no phone, and no SwitchBot account in the loop. It ships as a single Windows program.
 
@@ -28,13 +30,13 @@ This is a proof of concept and comes with no warranty.
 3. A Bluetooth command tells the plug to update. It fetches a tiny flasher from the PC, then the ESPHome image, and writes it over itself.
 4. The plug reboots into ESPHome and appears on your network as `sbplug-xxxxxx`.
 
-## The easy way: switchbota.exe
+## The easy way: switchback.exe
 
 One file, nothing to install. No git, no Node, no Python, no ESPHome.
 
-1. Download `switchbota.exe` from the [Releases page](https://github.com/ChristopherGriffin/switchbota/releases).
+1. Download `switchback.exe` from the [Releases page](https://github.com/ChristopherGriffin/switchback/releases).
 2. Set up DNS so `wohand.com` points at this PC (see the next section). You only do this once.
-3. Plug in a SwitchBot Plug Mini near the PC and run `switchbota.exe`.
+3. Plug in a SwitchBot Plug Mini near the PC and run `switchback.exe`.
 
 It will:
 
@@ -47,15 +49,15 @@ It will:
 
 The first run shows a one-time Windows Firewall prompt (it needs to serve on the network). Allow it. The program is not code-signed, so Windows SmartScreen may say "unknown publisher"; click "More info" then "Run anyway".
 
-It writes `sbplug_flashed.txt` next to itself: a numbered list of every plug done, with both MAC addresses, handy for labels.
+It writes `sbplug_flashed.txt` next to itself: a numbered list of every plug done, with both MAC addresses. Point it at a ZPL label printer with `--printer host:9100` and each plug also gets a label like the one in the photo above (sized for 1.5 x 0.5 inch labels): the date, both MACs, and a QR code of both.
 
 If a plug does not convert, it is unharmed as long as it still shows up in a Bluetooth scan. Leave it powered and run again.
 
 ## Point your plugs' DNS at the PC
 
-The plug looks up `wohand.com` to get its firmware. You make that name resolve to the PC running `switchbota.exe` instead of to SwitchBot. The program checks this at startup and prints the fix if it is not set. Pick whichever you can do:
+The plug looks up `wohand.com` to get its firmware. You make that name resolve to the PC running `switchback.exe` instead of to SwitchBot. The program checks this at startup and prints the fix if it is not set. Pick whichever you can do:
 
-- **Your router (simplest).** Set the router's DHCP "DNS server" to the PC's address. `switchbota.exe` runs a DNS server, so every other name still resolves normally; only `wohand.com` is redirected.
+- **Your router (simplest).** Set the router's DHCP "DNS server" to the PC's address. `switchback.exe` runs a DNS server, so every other name still resolves normally; only `wohand.com` is redirected.
 - **Just the plugs' network / VLAN.** If the plugs are on their own network, set that network's DNS server to the PC's address.
 - **Your own DNS (Pi-hole, AdGuard Home, Technitium, pfSense).** Add records sending `wohand.com` and `www.wohand.com` to the PC's address.
 
@@ -78,26 +80,26 @@ The button: a short press toggles the relay, and holding it for 10 seconds facto
 If you want to build the firmware yourself or script a batch, clone the repo and use the Python tools. You need Python 3.10 to 3.13 with ESPHome (`pip install esphome`), plus `bleak` and `zeroconf` (`pip install bleak zeroconf`).
 
 ```
-git clone -b esphome-direct https://github.com/ChristopherGriffin/switchbota.git
-cd switchbota
+git clone -b esphome-direct https://github.com/ChristopherGriffin/switchback.git
+cd switchback
 ```
 
 - Build a payload: `python tools/build_payload.py portal` (or `implant` to bake your own Wi-Fi in from `esphome/secrets.yaml`, or `direct` for the patchable image the exe uses).
 - Run the all-in-one tool (server + DNS + Bluetooth flasher):
-  `python tools/switchbota_app.py` and answer the prompts, the same flow as the exe.
+  `python tools/switchback.py` and answer the prompts, the same flow as the exe.
 - Just the Bluetooth flasher against a server elsewhere:
   `python tools/sbplug_batch.py --server http://<server> --wifi-ssid "<name>" --wifi-pass "<pw>"`
 
-On Windows there is also `switchbota.ps1`, which sets up the Python environment and runs the tool for you.
+On Windows there is also `switchback.ps1`, which sets up the Python environment and runs the tool for you.
 
 ## A dedicated always-on server
 
 To keep the firmware server up on a Linux box (a Pi, a NUC, a VM) instead of the PC, use the installer. On Debian or Ubuntu:
 
 ```
-git clone -b esphome-direct https://github.com/ChristopherGriffin/switchbota.git
-sudo sh switchbota/server/install.sh
-sudo sh switchbota/server/install.sh build portal
+git clone -b esphome-direct https://github.com/ChristopherGriffin/switchback.git
+sudo sh switchback/server/install.sh
+sudo sh switchback/server/install.sh build portal
 ```
 
 It installs Docker if needed, builds the image, and runs the server. Point your DNS at that box, then run the Bluetooth flasher from any computer with Bluetooth:

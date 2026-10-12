@@ -1,17 +1,17 @@
 #requires -version 5
 <#
-  switchbota.ps1 - run the whole SwitchBot Plug Mini -> ESPHome flasher from this one PC.
+  switchback.ps1 - run the whole SwitchBot Plug Mini -> ESPHome flasher from this one PC.
 
   It serves our firmware and answers DNS for wohand.com, so any Plug Mini whose
   DNS points at this PC fetches our firmware instead of SwitchBot's. Then the
   batch tool triggers each plug over Bluetooth.
 
   Usage (PowerShell; if a port is refused, use an elevated window):
-      .\switchbota.ps1               serve the portal payload + DNS, then wait
-      .\switchbota.ps1 -Implant      bake your Wi-Fi into the plugs (needs secrets.yaml)
-      .\switchbota.ps1 -Flash        also open the Bluetooth flasher once the server is up
-      .\switchbota.ps1 -NoDns        server only (you already redirect wohand.com elsewhere)
-      .\switchbota.ps1 -Rebuild      rebuild the payload even if one is already staged
+      .\switchback.ps1               serve the portal payload + DNS, then wait
+      .\switchback.ps1 -Implant      bake your Wi-Fi into the plugs (needs secrets.yaml)
+      .\switchback.ps1 -Flash        also open the Bluetooth flasher once the server is up
+      .\switchback.ps1 -NoDns        server only (you already redirect wohand.com elsewhere)
+      .\switchback.ps1 -Rebuild      rebuild the payload even if one is already staged
 
   Stop the server with Ctrl+C.
 #>
@@ -35,7 +35,7 @@ $payload = Join-Path $serverDir 'bin\payload.bin'
 $appBin = Join-Path $serverDir 'bin\app.bin'
 $variant = if ($Implant) { 'implant' } else { 'portal' }
 
-$appBinUrl = 'https://github.com/ChristopherGriffin/switchbota/releases/download/esphome-v0.1.0/app.bin'
+$appBinUrl = 'https://github.com/ChristopherGriffin/switchback/releases/download/esphome-v0.1.0/app.bin'
 $appBinSha256 = 'dc99cacdfe1a46debfdb66d971c44673ed957d8ebe8331f430e9016bbe5cbc56'
 
 function Step($m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
@@ -160,7 +160,7 @@ function Ensure-BatchVenv {
 }
 
 # ---- run ----
-if (-not (Test-Path $serverDir)) { Fail "Run this from inside the switchbota folder." }
+if (-not (Test-Path $serverDir)) { Fail "Run this from inside the switchback folder." }
 $lanIp = Find-LanIp
 Ensure-AppBin
 Ensure-Payload
@@ -200,7 +200,7 @@ if ($Flash) {
     & $batchPy (Join-Path $toolsDir 'sbplug_batch.py') --server "http://$lanIp" --skip-dns-check
 } else {
     $venvPy = Join-Path $root '.venv\Scripts\python.exe'
-    $flashHint = if (Test-Path $venvPy) { "`"$venvPy`" tools\sbplug_batch.py" } else { "run .\switchbota.ps1 -Flash, or set up tools\sbplug_batch.py yourself" }
+    $flashHint = if (Test-Path $venvPy) { "`"$venvPy`" tools\sbplug_batch.py" } else { "run .\switchback.ps1 -Flash, or set up tools\sbplug_batch.py yourself" }
     Step "Starting the server (Ctrl+C to stop). In another window, run the flasher:"
     Write-Host "    $flashHint --server http://$lanIp --skip-dns-check`n"
     Push-Location $serverDir

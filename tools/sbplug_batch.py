@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Convert SwitchBot Plug Minis (W1901400 / W1901401) to ESPHome with switchbota.
+"""Convert SwitchBot Plug Minis (W1901400 / W1901401) to ESPHome. Part of Switchback.
 
 Runs on a box with a Bluetooth radio. For each plug it:
   1. finds the plug by its Woan (0x0969) advertisement
-  2. sends the BLE command that makes the stock firmware fetch app.bin from the
-     switchbota server (the plug must already be on Wi-Fi via the SwitchBot app,
-     and wohand.com must resolve to the server)
-  3. polls OTA progress over BLE until the plug reboots into switchbota
-  4. follows the server's /events feed for that plug's MAC
-  5. waits for sbplug-xxxxxx to show up on mDNS (implant payload), or for the
-     flasher to finish and stay quiet (--portal, for the portal payload)
-  6. prints a ZPL label, if --printer is given
+  2. with --wifi-ssid, puts the stock plug on that Wi-Fi over Bluetooth (no app)
+  3. sends the BLE command that makes the stock firmware fetch app.bin, the
+     flasher, from the firmware server (wohand.com must resolve to the server)
+  4. polls OTA progress over BLE until the plug reboots into the flasher
+  5. follows the server's /events feed for that plug's MAC
+  6. waits for sbplug-xxxxxx to show up on mDNS (direct/implant payload), or for
+     the flasher to finish and stay quiet (--portal, for the portal payload)
+  7. logs it to sbplug_flashed.txt and prints a ZPL label, if --printer is given
 
 It does one plug per run unless --count says otherwise.
 
@@ -262,7 +262,7 @@ def preflight(args, feed):
         md5, size = feed.get("/payload.md5").split()
         feed.poll()
     except (OSError, ValueError) as error:
-        raise Failed(f"switchbota server at {feed.server} is not answering: {error}")
+        raise Failed(f"firmware server at {feed.server} is not answering: {error}")
     log(f"server payload: {size} bytes, md5 {md5}")
 
     if args.skip_dns_check:
@@ -341,7 +341,7 @@ async def ble_provision(device, ssid, password, connect_timeout=120):
 
 
 async def run_stage1(plug, tracker, args):
-    """Start the stock OTA and keep asking for progress until the server sees switchbota running.
+    """Start the stock OTA and keep asking for progress until the server sees the flasher running.
 
     The stock firmware drops the BLE link while it downloads and again when it reboots, so a
     lost link means nothing by itself. The only proof that stage 1 is over is the flasher's
@@ -481,7 +481,7 @@ async def convert(plug, feed, args):
             log(f"putting the plug on Wi-Fi {args.wifi_ssid!r} over Bluetooth (no app)")
             await ble_provision(plug.device, args.wifi_ssid, args.wifi_pass or "")
         await run_stage1(plug, tracker, args)
-        log("stage 1 done, waiting for switchbota to write the payload. Do not unplug.")
+        log("stage 1 done, waiting for the flasher to write the payload. Do not unplug.")
         if args.portal:
             await wait_for_flash(plug, tracker, args)
             address = "hotspot"
@@ -541,7 +541,7 @@ async def run(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--server", default="http://www.wohand.com",
-                        help="switchbota server base URL. The default is the name the plugs use, "
+                        help="Firmware server base URL. The default is the name the plugs use, "
                              "so it works wherever the DNS override does.")
     parser.add_argument("--count", type=int, default=1, help="how many plugs to convert this run (default 1)")
     parser.add_argument("--only", type=str.lower, help="only touch the plug with this BLE MAC")

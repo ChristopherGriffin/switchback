@@ -1,5 +1,5 @@
 #!/bin/sh
-# Sets up the switchbota server on a Debian or Ubuntu box. Everything runs in Docker,
+# Sets up the Switchback firmware server on a Debian or Ubuntu box. Everything runs in Docker,
 # so the only things installed on the host are Docker, git and curl.
 #
 #   sh install.sh                  install or update, then start the server
@@ -9,13 +9,13 @@
 # Run it as root. It is safe to run again at any time.
 set -eu
 
-REPO="${SWITCHBOTA_REPO:-https://github.com/ChristopherGriffin/switchbota.git}"
+REPO="${SWITCHBOTA_REPO:-https://github.com/ChristopherGriffin/switchback.git}"
 BRANCH="${SWITCHBOTA_BRANCH:-esphome-direct}"
 DIR="${SWITCHBOTA_DIR:-/opt/switchbota}"
 
 # The flasher that gets written to the plug first. It is pinned by checksum because
 # it is the program that overwrites the bootloader.
-APP_BIN_URL="https://github.com/ChristopherGriffin/switchbota/releases/download/esphome-v0.1.0/app.bin"
+APP_BIN_URL="https://github.com/ChristopherGriffin/switchback/releases/download/esphome-v0.1.0/app.bin"
 APP_BIN_SHA256="dc99cacdfe1a46debfdb66d971c44673ed957d8ebe8331f430e9016bbe5cbc56"
 
 ESPHOME_IMAGE="ghcr.io/esphome/esphome:stable"

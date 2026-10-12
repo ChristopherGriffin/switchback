@@ -1,11 +1,11 @@
-# PyInstaller spec for switchbota.exe (one file, console, asks for admin).
+# PyInstaller spec for switchback.exe (one file, console, asks for admin).
 #
 # Needs these present before building:
 #   server/bin/app.bin     the flasher (from the GitHub release, or built in espressif/)
 #   dist/payload.bin       the ship firmware (python tools/build_payload.py ship -o dist/payload.bin)
 #
-# Build:  pyinstaller packaging/switchbota.spec
-# Output: dist/switchbota.exe
+# Build:  pyinstaller packaging/switchback.spec
+# Output: dist/switchback.exe
 
 import os
 from PyInstaller.utils.hooks import collect_all
@@ -32,7 +32,7 @@ for pkg in ("bleak", "zeroconf", "winrt"):
         pass
 
 a = Analysis(
-    [os.path.join(root, "tools", "switchbota_app.py")],
+    [os.path.join(root, "tools", "switchback.py")],
     pathex=[os.path.join(root, "tools")],
     binaries=binaries,
     datas=datas,
@@ -51,7 +51,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="switchbota",
+    name="switchback",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -60,5 +60,5 @@ exe = EXE(
     disable_windowed_traceback=False,
     # Ports 53 and 80 bind without admin on Windows, so no forced UAC prompt. The
     # first run shows the normal one-time Windows Firewall allow instead.
-    icon=os.path.join(root, "packaging", "switchbota.ico") if os.path.exists(os.path.join(root, "packaging", "switchbota.ico")) else None,
+    icon=os.path.join(root, "packaging", "switchback.ico") if os.path.exists(os.path.join(root, "packaging", "switchback.ico")) else None,
 )

@@ -1,4 +1,4 @@
-name: Build switchbota.exe
+name: Build switchback.exe
 
 # Builds the Windows exe and attaches it to the release when you push a tag
 # like esphome-v0.1.0. The ship firmware and the flasher are taken from that
@@ -44,11 +44,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Build the exe
-        run: pyinstaller packaging/switchbota.spec
+        run: pyinstaller packaging/switchback.spec
 
       - name: Attach the exe to the release
         shell: bash
-        run: gh release upload "${{ steps.tag.outputs.tag }}" dist/switchbota.exe -R "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "${{ steps.tag.outputs.tag }}" dist/switchback.exe -R "$GITHUB_REPOSITORY" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -57,10 +57,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p sums
-          cp dist/switchbota.exe server/bin/app.bin sums/
+          cp dist/switchback.exe server/bin/app.bin sums/
           cp dist/payload.bin sums/payload-ship.bin
           cp dist/payload-direct.bin sums/payload-direct.bin
-          (cd sums && sha256sum switchbota.exe app.bin payload-ship.bin payload-direct.bin > SHA256SUMS.txt)
+          (cd sums && sha256sum switchback.exe app.bin payload-ship.bin payload-direct.bin > SHA256SUMS.txt)
           gh release upload "${{ steps.tag.outputs.tag }}" sums/SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber
         env:
           GH_TOKEN: ${{ github.token }}

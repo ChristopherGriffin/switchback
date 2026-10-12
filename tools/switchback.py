@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""switchbota, all in one.
+"""Switchback, all in one.
 
 The firmware server, a DNS responder for wohand.com, and the Bluetooth flasher in
-one program, so it can be shipped as a single switchbota.exe with no git, no Node,
+one program, so it can be shipped as a single switchback.exe with no git, no Node,
 no ESPHome and no Python for the person running it.
 
-    switchbota_app.py                 serve + DNS, scan and convert one plug
-    switchbota_app.py --count 10      a batch, asking before each
-    switchbota_app.py --no-dns        server only (you redirect wohand.com elsewhere)
+    switchback.py                     serve + DNS, scan and convert one plug
+    switchback.py --count 10          a batch, asking before each
+    switchback.py --no-dns            server only (you redirect wohand.com elsewhere)
 
 It serves app.bin and payload.bin from next to this file (server/bin in the repo,
 or bundled into the exe). Point your plugs' DNS at this PC and it does the rest.
@@ -258,7 +258,7 @@ def start_dns(ip, port, upstream="8.8.8.8"):
 async def run(args):
     fw = Firmware()
     ip = args.ip or local_ip()
-    print(f"switchbota ready. This PC is {ip}")
+    print(f"Switchback ready. This PC is {ip}")
     print(f"  payload: {len(fw.payload)} bytes, md5 {fw.md5}")
 
     feed = LiveFeed()

@@ -1,5 +1,5 @@
 #==============================================================================
-# switchbota bootstrap shipped inside switchbota.exe
+# Switchback bootstrap shipped inside switchback.exe
 #==============================================================================
 # This is the no-secrets build. It is the same hardware setup as the other
 # variants, with two differences so it can be shared with everyone:
