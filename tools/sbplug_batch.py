@@ -44,6 +44,13 @@ WRITE_CHAR = "cba20002-224d-11e6-9fb8-0002a5d5c51b"
 NOTIFY_CHAR = "cba20003-224d-11e6-9fb8-0002a5d5c51b"
 CMD_OTA_START = bytes.fromhex("570f0a01")  # followed by the firmware version byte
 CMD_OTA_PROGRESS = bytes.fromhex("570f0b")
+# Wi-Fi provisioning, decoded from an Android capture (see memory). All plaintext.
+CMD_PROV_INIT = bytes.fromhex("570f95")      # -> 05
+CMD_PROV_BEGIN = bytes.fromhex("570f0c00")   # -> 01
+CMD_PROV_SSID = bytes.fromhex("570f01")      # + <len> 00 <ssid>, -> 01
+CMD_PROV_PASS = bytes.fromhex("570f02")      # + <len> 00 <password>, -> 01
+CMD_PROV_CONNECT = bytes.fromhex("570f03")   # -> 01
+CMD_PROV_STATUS = bytes.fromhex("570f04")    # -> 0c <2 digits> <mac> while connecting, 01 ... when connected
 
 OTA_HOSTS = ("www.wohand.com", "wohand.com")
 ESPHOME_SERVICE = "_esphomelib._tcp.local."
@@ -281,6 +288,56 @@ async def command(client, replies, data):
         return None
 
 
+async def ble_provision(device, ssid, password, connect_timeout=120):
+    """Set the plug's Wi-Fi over BLE and wait for it to join. No SwitchBot app needed.
+
+    Returns True once the plug reports connected. The sequence and framing were decoded
+    from the stock app's own Bluetooth traffic; everything is plaintext.
+    """
+    replies = asyncio.Queue()
+    async with BleakClient(device, timeout=30) as client:
+        await client.start_notify(NOTIFY_CHAR, lambda _, data: replies.put_nowait(bytes(data)))
+
+        async def cmd(data, timeout=5):
+            while not replies.empty():
+                replies.get_nowait()
+            await client.write_gatt_char(WRITE_CHAR, data, response=True)
+            try:
+                return await asyncio.wait_for(replies.get(), timeout)
+            except asyncio.TimeoutError:
+                return b""
+
+        ssid_b = ssid.encode("utf-8")
+        pass_b = password.encode("utf-8")
+        if len(ssid_b) > 32 or len(pass_b) > 63:
+            raise Failed("SSID must be <=32 bytes and password <=63 bytes")
+
+        await cmd(CMD_PROV_INIT)
+        await cmd(CMD_PROV_BEGIN)
+        r_ssid = await cmd(CMD_PROV_SSID + bytes([len(ssid_b), 0x00]) + ssid_b)
+        r_pass = await cmd(CMD_PROV_PASS + bytes([len(pass_b), 0x00]) + pass_b)
+        r_conn = await cmd(CMD_PROV_CONNECT)
+        if not (r_ssid[:1] == b"\x01" and r_pass[:1] == b"\x01" and r_conn[:1] == b"\x01"):
+            raise Failed(f"plug rejected the Wi-Fi details (ssid ack {hexs(r_ssid)}, "
+                         f"pass ack {hexs(r_pass)}, connect ack {hexs(r_conn)})")
+
+        log(f"Wi-Fi details sent, waiting for the plug to join {ssid!r}")
+        started = time.monotonic()
+        last = None
+        while time.monotonic() - started < connect_timeout:
+            status = await cmd(CMD_PROV_STATUS)
+            # 0x0c prefix = still connecting; 0x01 prefix = connected
+            if status[:1] == b"\x01":
+                log("plug is on Wi-Fi")
+                return True
+            if status and status != last:
+                last = status
+                code = status[1:3].decode("ascii", "replace") if len(status) >= 3 else "?"
+                log(f"joining Wi-Fi, status {code}")
+            await asyncio.sleep(2)
+    raise Failed(f"plug did not join {ssid!r} in time. Check the Wi-Fi name and password.")
+
+
 async def run_stage1(plug, tracker, args):
     """Start the stock OTA and keep asking for progress until the server sees switchbota running.
 
@@ -415,6 +472,9 @@ async def convert(plug, feed, args):
     log(f"converting {plug}, expecting {plug.name}")
     PROGRESS.start()
     try:
+        if getattr(args, "wifi_ssid", None):
+            log(f"putting the plug on Wi-Fi {args.wifi_ssid!r} over Bluetooth (no app)")
+            await ble_provision(plug.device, args.wifi_ssid, args.wifi_pass or "")
         await run_stage1(plug, tracker, args)
         log("stage 1 done, waiting for switchbota to write the payload. Do not unplug.")
         if args.portal:
@@ -480,6 +540,8 @@ def main():
                              "so it works wherever the DNS override does.")
     parser.add_argument("--count", type=int, default=1, help="how many plugs to convert this run (default 1)")
     parser.add_argument("--only", type=str.lower, help="only touch the plug with this BLE MAC")
+    parser.add_argument("--wifi-ssid", help="Wi-Fi the plug should join, set over Bluetooth (no SwitchBot app)")
+    parser.add_argument("--wifi-pass", help="password for --wifi-ssid")
     parser.add_argument("--yes", action="store_true", help="do not ask before each plug")
     parser.add_argument("--portal", action="store_true",
                         help="the server has the portal payload: finish when the flasher is done "

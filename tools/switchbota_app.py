@@ -202,6 +202,28 @@ async def run(args):
         while True:
             await asyncio.sleep(3600)
 
+    # The plugs are put on Wi-Fi over Bluetooth, so no SwitchBot app. Ask which network.
+    if not args.wifi_ssid:
+        print("\nWhich Wi-Fi should the plugs join? (set on each plug over Bluetooth)")
+        args.wifi_ssid = (await asyncio.to_thread(input, "  Wi-Fi name (SSID): ")).strip()
+        if not args.wifi_ssid:
+            print("No Wi-Fi name given, nothing to do.")
+            return
+        import getpass
+        try:
+            args.wifi_pass = await asyncio.to_thread(getpass.getpass, "  Wi-Fi password: ")
+        except Exception:
+            args.wifi_pass = await asyncio.to_thread(input, "  Wi-Fi password: ")
+
+    if not args.mode:
+        print("\nAfter flashing, how should the plug get on Wi-Fi?")
+        print("  [1] direct  - it joins the Wi-Fi you just entered")
+        print("  [2] portal  - it opens a hotspot so you pick Wi-Fi in a browser")
+        choice = (await asyncio.to_thread(input, "  choose 1 or 2: ")).strip()
+        args.mode = "portal" if choice.startswith("2") else "direct"
+    args.portal = (args.mode == "portal")
+    print(f"mode: {args.mode}")
+
     handled = set()
     converted = 0
     while converted < args.count:
@@ -223,6 +245,10 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--count", type=int, default=1, help="how many plugs to convert this run")
     p.add_argument("--only", type=str.lower, help="only the plug with this BLE MAC")
+    p.add_argument("--wifi-ssid", help="Wi-Fi the plugs should join (set over Bluetooth; asked for if omitted)")
+    p.add_argument("--wifi-pass", help="password for --wifi-ssid")
+    p.add_argument("--mode", choices=["direct", "portal"],
+                   help="direct = plug joins the Wi-Fi you enter; portal = plug opens a hotspot to pick Wi-Fi after")
     p.add_argument("--yes", action="store_true", help="do not ask before each plug")
     p.add_argument("--serve-only", action="store_true", help="run the server and DNS, do not flash")
     p.add_argument("--no-dns", action="store_true", help="do not run the DNS server")
@@ -246,7 +272,7 @@ def main():
         print(f"payload.bin: {len(fw.payload)} bytes, md5 {fw.md5}")
         return
     # convert() expects these names
-    args.portal = True
+    args.portal = (args.mode == "portal")  # finalized in run() after the prompt
     args.skip_dns_check = True
     try:
         asyncio.run(run(args))
