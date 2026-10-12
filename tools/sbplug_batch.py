@@ -212,6 +212,9 @@ async def run_stage1(plug, tracker, args):
     The stock firmware drops the BLE link while it downloads and again when it reboots, so a
     lost link means nothing by itself. The only proof that stage 1 is over is the flasher's
     own request reaching the server.
+
+    Seen on the first plug converted: with no progress command after the download, the stock
+    firmware still rebooted into the flasher, about ten minutes later.
     """
     started = time.monotonic()
     start_sent = False
@@ -388,7 +391,9 @@ def main():
     parser.add_argument("--fw-byte", type=lambda text: int(text, 16), default=0x0C,
                         help="version byte for the OTA start command, hex. 0C is v1.2, 0D v1.3, 0E v1.4. "
                              "It has to differ from what the plug runs now.")
-    parser.add_argument("--stage1-timeout", type=float, default=300, help="seconds allowed for the stock OTA")
+    parser.add_argument("--stage1-timeout", type=float, default=900,
+                        help="seconds allowed for the stock OTA. The default is long because a plug that "
+                             "is never told to apply its download does so by itself after about ten minutes.")
     parser.add_argument("--domain", help="DNS suffix such as .lan. With it the plug also counts as up when "
                                          "sbplug-xxxxxx plus this suffix answers on the ESPHome API port, "
                                          "which works across VLANs where mDNS does not.")
