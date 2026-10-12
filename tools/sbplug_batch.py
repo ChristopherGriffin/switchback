@@ -46,6 +46,7 @@ CMD_OTA_PROGRESS = bytes.fromhex("570f0b")
 
 OTA_HOSTS = ("www.wohand.com", "wohand.com")
 ESPHOME_SERVICE = "_esphomelib._tcp.local."
+ESPHOME_API_PORT = 6053
 ESPHOME_PREFIX = "sbplug"
 
 # A flasher that failed its verify comes back for payload.md5 well inside this
@@ -239,8 +240,16 @@ async def run_stage1(plug, tracker, args):
     raise Failed("stage 1 did not finish in time")
 
 
+def api_reachable(host):
+    try:
+        with socket.create_connection((host, ESPHOME_API_PORT), timeout=2):
+            return True
+    except OSError:
+        return False
+
+
 async def wait_for_esphome(plug, tracker, args):
-    """Follow stage 2 on the server until the plug announces itself as ESPHome."""
+    """Follow stage 2 on the server until the plug is up as ESPHome. Returns (address, reported MAC)."""
     zeroconf = AsyncZeroconf()
     try:
         deadline = time.monotonic() + args.timeout
@@ -248,11 +257,15 @@ async def wait_for_esphome(plug, tracker, args):
             await tracker.update()
             info = AsyncServiceInfo(ESPHOME_SERVICE, f"{plug.name}.{ESPHOME_SERVICE}")
             if await info.async_request(zeroconf.zeroconf, 2000):
-                return info
+                return ", ".join(info.parsed_addresses()), (info.properties.get(b"mac") or b"").decode()
+            # mDNS does not cross VLANs. Where DHCP registers names in DNS, this does.
+            if args.domain and await asyncio.to_thread(api_reachable, plug.name + args.domain):
+                return plug.name + args.domain, ""
     finally:
         await zeroconf.async_close()
-    raise Failed(f"{plug.name} never appeared on mDNS. Leave the plug powered and check the server log. "
-                 "If the server has the portal payload, use --portal.")
+    raise Failed(f"{plug.name} never appeared on the network. Leave the plug powered and check the server log. "
+                 "If the server has the portal payload, use --portal. If the plugs are on another VLAN, "
+                 "mDNS cannot see them: use --domain.")
 
 
 async def wait_for_flash(plug, tracker, args):
@@ -285,9 +298,7 @@ async def convert(plug, feed, args):
         address = "hotspot"
         log(f"{plug.name} is flashed. Join its hotspot, also named {plug.name}, to put it on Wi-Fi.")
     else:
-        info = await wait_for_esphome(plug, tracker, args)
-        address = ", ".join(info.parsed_addresses())
-        reported = (info.properties.get(b"mac") or b"").decode()
+        address, reported = await wait_for_esphome(plug, tracker, args)
         log(f"{plug.name} is up at {address}")
         if reported and reported != plug.wifi_mac.replace(":", ""):
             log(f"warning: it reports MAC {reported}, expected {plug.wifi_mac}")
@@ -351,6 +362,9 @@ def main():
                         help="version byte for the OTA start command, hex. 0C is v1.2, 0D v1.3, 0E v1.4. "
                              "It has to differ from what the plug runs now.")
     parser.add_argument("--stage1-timeout", type=float, default=300, help="seconds allowed for the stock OTA")
+    parser.add_argument("--domain", help="DNS suffix such as .lan. With it the plug also counts as up when "
+                                         "sbplug-xxxxxx plus this suffix answers on the ESPHome API port, "
+                                         "which works across VLANs where mDNS does not.")
     parser.add_argument("--timeout", type=float, default=600, help="seconds allowed after stage 1")
     parser.add_argument("--skip-dns-check", action="store_true", help="do not check wohand.com from this box")
     parser.add_argument("--printer", help="ZPL printer as host:port (port defaults to 9100). No label without it.")
