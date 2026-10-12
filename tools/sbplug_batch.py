@@ -215,10 +215,13 @@ async def run_stage1(plug, tracker, args):
     """
     started = time.monotonic()
     start_sent = False
+    link_lost = False
     last_reply = None
 
     def stage1_over():
-        if tracker.saw("flip", "payload_md5"):
+        # Any request from the flasher will do. If the plug rebooted into it before we started
+        # watching, the first thing we see can be the end of its download.
+        if tracker.saw("flip", "payload_md5", "payload_start", "payload_done"):
             return True
         if not tracker.saw("stage1") and time.monotonic() - started > 60:
             raise Failed("the plug never fetched firmware from the server. Check that it is on Wi-Fi, "
@@ -246,7 +249,11 @@ async def run_stage1(plug, tracker, args):
                         percent = f"{reply[1]}%" if len(reply) >= 2 else "no percentage"
                         log(f"stage 1 progress: {percent}  [{hexs(reply)}]")
         except (BleakError, OSError, asyncio.TimeoutError, EOFError):
-            pass
+            if start_sent and not link_lost:
+                log("BLE link lost, will keep trying to reconnect")
+            link_lost = True
+        else:
+            link_lost = False
         await tracker.update()
         if stage1_over():
             return
