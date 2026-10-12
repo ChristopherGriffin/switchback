@@ -25,6 +25,7 @@ import asyncio
 import csv
 import datetime
 import json
+import shutil
 import socket
 import sys
 import time
@@ -51,6 +52,8 @@ ESPHOME_PREFIX = "sbplug"
 
 # A flasher that failed its verify comes back for payload.md5 well inside this
 SETTLE_SECONDS = 60
+# How long a plug that is never told to apply its download takes to do it by itself
+SELF_APPLY_SECONDS = 630
 
 # 1.5 x 0.5 inch label at 203 dpi (GK420t): 305 x 102 dots. Text on the left, a QR code
 # of the device name on the right. A Code 128 of the name does not fit at a scannable width.
@@ -69,7 +72,71 @@ class Failed(Exception):
 
 
 def log(message):
+    PROGRESS.clear()
     print(f"{time.strftime('%H:%M:%S')}  {message}", flush=True)
+    PROGRESS.draw()
+
+
+def clock(seconds):
+    return f"{int(seconds) // 60}:{int(seconds) % 60:02d}"
+
+
+class Progress:
+    """One status line under the log: which step, a bar, and time spent against time expected.
+
+    The bar is time against the usual length of the step, since neither the plug nor the server
+    reports a percentage for most of them. A step that runs long keeps a full bar and a running clock.
+    """
+
+    def __init__(self):
+        self.task = None
+        self.step = self.label = self.note = ""
+        self.expected = 1
+        self.since = 0.0
+        self.shown = 0  # length of the line currently on screen
+
+    def start(self):
+        if sys.stdout.isatty():
+            self.task = asyncio.get_running_loop().create_task(self.run())
+
+    def stop(self):
+        if self.task:
+            self.task.cancel()
+            self.task = None
+        self.clear()
+
+    async def run(self):
+        while True:
+            self.draw()
+            await asyncio.sleep(0.5)
+
+    def phase(self, step, label, expected):
+        self.step, self.label, self.expected, self.note = step, label, expected, ""
+        self.since = time.monotonic()
+        self.draw()
+
+    def clear(self):
+        if self.shown:
+            sys.stdout.write("\r" + " " * self.shown + "\r")
+            sys.stdout.flush()
+            self.shown = 0
+
+    def draw(self):
+        if not self.task or not self.step:
+            return
+        elapsed = time.monotonic() - self.since
+        columns = shutil.get_terminal_size((80, 24)).columns - 1
+        head = f"{self.step} {self.label} ["
+        tail = f"] {clock(elapsed)}/~{clock(self.expected)}" + (f" {self.note}" if self.note else "")
+        width = max(8, min(30, columns - len(head) - len(tail)))
+        filled = min(width, int(width * elapsed / self.expected))
+        line = (head + "#" * filled + "-" * (width - filled) + tail)[:columns]
+        sys.stdout.write("\r" + line + " " * max(0, self.shown - len(line)))
+        sys.stdout.flush()
+        self.shown = len(line)
+
+
+PROGRESS = Progress()
 
 
 def hexs(data):
@@ -139,8 +206,9 @@ class EventFeed:
 class PlugEvents:
     """Picks one plug's events out of the feed and logs them as they arrive."""
 
-    def __init__(self, feed, plug):
+    def __init__(self, feed, plug, portal=False):
         self.feed = feed
+        self.portal = portal
         self.mac = plug.wifi_mac
         self.ips = set()
         self.seen = []
@@ -163,8 +231,15 @@ class PlugEvents:
             log(f"server: {event['event']} from {event['ip']}{detail}")
             if event["event"] == "payload_done":
                 self.done_at = time.monotonic()
+                if self.portal:
+                    PROGRESS.phase("3/3", "checking it stays quiet", SETTLE_SECONDS)
+                else:
+                    PROGRESS.phase("3/3", "verifying, booting ESPHome", 40)
             elif event["event"] in ("payload_md5", "payload_start"):
                 self.done_at = None
+                PROGRESS.phase("2/3", "flasher writing ESPHome", 20)
+            elif event["event"] == "flip":
+                PROGRESS.phase("2/3", "flasher moving itself", 30)
             if event["event"] == "payload_md5" and "payload_start" in self.seen:
                 log("server: the flasher is retrying, leave the plug powered")
 
@@ -219,6 +294,7 @@ async def run_stage1(plug, tracker, args):
     started = time.monotonic()
     start_sent = False
     link_lost = False
+    PROGRESS.phase("1/3", "stock OTA, waiting for reboot", SELF_APPLY_SECONDS)
     last_reply = None
 
     def stage1_over():
@@ -249,6 +325,7 @@ async def run_stage1(plug, tracker, args):
                     reply = await command(client, replies, CMD_OTA_PROGRESS)
                     if reply and reply != last_reply:
                         last_reply = reply
+                        PROGRESS.note = f"dl {reply[1]}%" if len(reply) >= 2 else ""
                         percent = f"{reply[1]}%" if len(reply) >= 2 else "no percentage"
                         log(f"stage 1 progress: {percent}  [{hexs(reply)}]")
         except (BleakError, OSError, asyncio.TimeoutError, EOFError):
@@ -318,20 +395,24 @@ def print_label(printer, name, wifi_mac):
 
 async def convert(plug, feed, args):
     await asyncio.to_thread(feed.poll)  # skip anything already in the feed
-    tracker = PlugEvents(feed, plug)
+    tracker = PlugEvents(feed, plug, args.portal)
 
     log(f"converting {plug}, expecting {plug.name}")
-    await run_stage1(plug, tracker, args)
-    log("stage 1 done, waiting for switchbota to write the payload. Do not unplug.")
-    if args.portal:
-        await wait_for_flash(plug, tracker, args)
-        address = "hotspot"
-        log(f"{plug.name} is flashed. Join its hotspot, also named {plug.name}, to put it on Wi-Fi.")
-    else:
-        address, reported = await wait_for_esphome(plug, tracker, args)
-        log(f"{plug.name} is up at {address}")
-        if reported and reported != plug.wifi_mac.replace(":", ""):
-            log(f"warning: it reports MAC {reported}, expected {plug.wifi_mac}")
+    PROGRESS.start()
+    try:
+        await run_stage1(plug, tracker, args)
+        log("stage 1 done, waiting for switchbota to write the payload. Do not unplug.")
+        if args.portal:
+            await wait_for_flash(plug, tracker, args)
+            address = "hotspot"
+            log(f"{plug.name} is flashed. Join its hotspot, also named {plug.name}, to put it on Wi-Fi.")
+        else:
+            address, reported = await wait_for_esphome(plug, tracker, args)
+            log(f"{plug.name} is up at {address}")
+            if reported and reported != plug.wifi_mac.replace(":", ""):
+                log(f"warning: it reports MAC {reported}, expected {plug.wifi_mac}")
+    finally:
+        PROGRESS.stop()
 
     with open(args.log, "a", newline="") as handle:
         csv.writer(handle).writerow(
