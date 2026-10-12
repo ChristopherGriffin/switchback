@@ -18,6 +18,8 @@ import asyncio
 import datetime
 import hashlib
 import socket
+import struct
+import subprocess
 import sys
 import threading
 import time
@@ -129,6 +131,72 @@ def start_http(fw, feed, port):
     return server
 
 
+def flush_dns():
+    """Clear the OS DNS cache so a stale wohand.com answer can't trip us up."""
+    try:
+        if sys.platform.startswith("win"):
+            subprocess.run(["ipconfig", "/flushdns"], capture_output=True, timeout=10)
+        elif sys.platform == "darwin":
+            subprocess.run(["dscacheutil", "-flushcache"], capture_output=True, timeout=10)
+        else:
+            subprocess.run(["resolvectl", "flush-caches"], capture_output=True, timeout=10)
+        return True
+    except Exception:
+        return False
+
+
+def dns_a_query(server, port, name, timeout=3):
+    """Ask one DNS server for an A record and return the first address, or None."""
+    labels = b"".join(bytes([len(p)]) + p.encode() for p in name.split("."))
+    query = struct.pack(">HHHHHH", 0x4242, 0x0100, 1, 0, 0, 0) + labels + b"\x00" + struct.pack(">HH", 1, 1)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(timeout)
+    try:
+        sock.sendto(query, (server, port))
+        resp, _ = sock.recvfrom(512)
+        if struct.unpack(">H", resp[6:8])[0] >= 1 and len(resp) >= 4:
+            return ".".join(str(b) for b in resp[-4:])
+    except OSError:
+        return None
+    finally:
+        sock.close()
+    return None
+
+
+def check_dns(ip, args):
+    """Confirm the plugs will resolve wohand.com to this PC. Flush the cache first, just in case."""
+    print("\nChecking DNS (so the plugs can find this PC) ...")
+    flush_dns()
+    try:
+        system_answer = socket.gethostbyname("www.wohand.com")
+    except OSError:
+        system_answer = None
+
+    if not args.no_dns:
+        mine = dns_a_query("127.0.0.1", args.dns_port, "www.wohand.com")
+        if mine == ip:
+            print(f"  OK: the built-in DNS here answers wohand.com -> {ip}.")
+            print(f"  Set your plugs' network DNS server to {ip} (your router's DHCP DNS, or the plug's VLAN).")
+        else:
+            print(f"  NOTE: the built-in DNS did not answer as expected (got {mine}). Port {args.dns_port} may be busy.")
+
+    if system_answer == ip:
+        print(f"  OK: wohand.com already resolves to this PC ({ip}). You're set.")
+        return True
+
+    print(f"  ATTENTION: on this PC, wohand.com resolves to {system_answer or 'nothing'}, not this PC ({ip}).")
+    print( "  The plugs fetch their firmware from wohand.com, so that name has to point at this PC.")
+    print( "  Do ONE of these, then run this again:")
+    print(f"    1. Router (simplest): set the DHCP 'DNS server' to {ip} for your network.")
+    print(f"    2. Just the plugs' network/VLAN: set its DNS server to {ip}.")
+    print(f"    3. Your own DNS (Pi-hole, AdGuard, Technitium, pfSense): add records sending")
+    print(f"       wohand.com  and  www.wohand.com  to  {ip}.")
+    if not args.no_dns:
+        print(f"  (This PC is already answering DNS on {ip}; options above just point the plugs at it.)")
+    print( "  The DNS cache was flushed, so new lookups will pick up the change right away.")
+    return False
+
+
 def start_dns(ip, port, upstream="8.8.8.8"):
     """Answer A queries for wohand.com with our IP, forward everything else."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -196,6 +264,8 @@ async def run(args):
                   "or close whatever is using port 53.")
     else:
         print(f"  DNS off. Redirect {', '.join(OTA_HOSTS)} to {ip} in your own DNS.")
+
+    check_dns(ip, args)
 
     if args.serve_only:
         print("\nServing. Press Ctrl+C to stop.")
